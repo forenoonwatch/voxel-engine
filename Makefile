@@ -12,7 +12,7 @@ OBJS := $(SRCS:%=$(BUILD_DIR)/%.o)
 UNAME := $(shell uname -s)
 
 ifeq ($(UNAME), Linux)
-	LDLIBS := $(shell pkg-config glfw3 --static --libs) $(shell pkg-config glew --static --libs) $(shell pkg-config assimp --static --libs)
+	LDLIBS := $(shell pkg-config glfw3 --static --libs) $(shell pkg-config glew --static --libs) $(shell pkg-config assimp --static --libs) -lnoise
 	LDFLAGS := -Wall -fuse-ld=gold
 
 	CXXFLAGS := -std=c++17 -g -ggdb -I$(CURDIR)/src

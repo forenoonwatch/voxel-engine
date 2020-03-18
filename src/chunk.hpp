@@ -4,20 +4,24 @@
 
 #include <engine/core/common.hpp>
 
+#include <libnoise/noise.h>
+
 class RenderContext;
 class VertexArray;
+class IndexedModel;
 
 class Chunk final {
     public:
         static constexpr const uint32 CHUNK_SIZE = 16;
         static constexpr const float BLOCK_RENDER_SIZE = 0.5f;
 
-        Chunk(RenderContext& context, const Vector3i& position);
+        Chunk();
 
-        void build_chunk();
+        void init(RenderContext& context, const IndexedModel& model);
 
-        void update(float deltaTime);
-        void render();
+        void load(const Vector3i& position,
+                noise::module::Perlin& perlin);
+        void rebuild();
 
         Block& get(uint32 x, uint32 y, uint32 z) noexcept;
 
@@ -32,6 +36,8 @@ class Chunk final {
         bool occludesNegZ() const noexcept;
         bool occludesPosZ() const noexcept;
 
+        bool isEmpty() const noexcept;
+
         ~Chunk();
     private:
         NULL_COPY_AND_ASSIGN(Chunk);
@@ -44,7 +50,9 @@ class Chunk final {
             FLAG_OCCLUDES_POS_Z = 16,
             FLAG_OCCLUDES_NEG_Z = 32,
 
-            FLAG_ALL_OCCLUSIONS = 63
+            FLAG_ALL_OCCLUSIONS = 63,
+
+            FLAG_EMPTY          = 64,
         };
 
         Block blocks[CHUNK_SIZE][CHUNK_SIZE][CHUNK_SIZE];

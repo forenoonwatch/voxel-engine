@@ -1,47 +1,89 @@
 #include "chunk-manager.hpp"
 
 #include <engine/core/memory.hpp>
+
 #include <engine/math/matrix.hpp>
+#include <engine/math/math.hpp>
 
 #include <engine/rendering/vertex-array.hpp>
 
 #include "chunk.hpp"
 #include "camera.hpp"
 
+#define CUBE(n) ((n) * (n) * (n))
+
 ChunkManager::ChunkManager(RenderContext& context, int32 loadDistance)
-        : loadDistance(loadDistance)
-        , context(&context)
-        , chunkOffset(3, 0, 0) {
-    loadedChunks.resize(loadDistance * loadDistance * loadDistance);
+        : chunkPool((Chunk*)Memory::malloc(CUBE(loadDistance) * sizeof(Chunk)))
+        , loadedChunks((Chunk**)Memory::malloc(CUBE(loadDistance) * sizeof(Chunk*)))
+        , loadDistance(loadDistance)
+        , renderList((Chunk**)Memory::malloc(CUBE(loadDistance) * sizeof(Chunk*)))
+        , chunkOffset(3, 0, 0)
+        , context(&context) {
+    IndexedModel model;
+    model.allocateElement(3);
+    model.allocateElement(3);
+    model.allocateElement(3);
+    model.allocateElement(16);
+    model.setInstancedElementStartIndex(3);
+
+    for (int32 i = 0; i < CUBE(loadDistance); ++i) {
+        chunkPool[i].init(context, model);
+        loadedChunks[i] = chunkPool + i;
+    }
 }
 
 void ChunkManager::load_chunks(const Camera& camera) {
     Vector3i newOffset(camera.invView[3]);
     newOffset /= Chunk::CHUNK_SIZE;
+    newOffset -= loadDistance / 2;
 
-    Vector3i deltaOffset = newOffset - chunkOffset;
-    //chunkOffset = newOffset;
+    const Vector3i deltaOffset = newOffset - chunkOffset;
 
-    Memory::SharedPointer<Chunk> newChunks[loadDistance
-            * loadDistance * loadDistance];
-    
-    int32 numReloaded = 0;
+    if (deltaOffset.x == 0 && deltaOffset.y == 0 && deltaOffset.z == 0) {
+        return;
+    }
+
+    Chunk* newChunks[CUBE(loadDistance)];
 
     for (int32 x = 0; x < loadDistance; ++x) {
         for (int32 y = 0; y < loadDistance; ++y) {
             for (int32 z = 0; z < loadDistance; ++z) {
                 const Vector3i pLocal(x, y, z);
-                const Vector3i pNew = pLocal + deltaOffset;
+                const Vector3i pOld = pLocal + deltaOffset;
 
-                if (is_valid_local_index(pNew)
-                        && loadedChunks[get_local_index(pNew)]) {
-                    newChunks[get_local_index(pLocal)]
-                            = loadedChunks[get_local_index(pNew)];
+                if (is_valid_local_index(pOld)) {
+                    Chunk* chnk = loadedChunks[get_local_index(pOld)];
+                    newChunks[get_local_index(pLocal)] = chnk;
+
+                    if (chnk->getPosition() != pLocal + newOffset) {
+                        chnk->load(pLocal + newOffset, perlin);
+                        chnk->rebuild();
+                    }
                 }
                 else {
-                    newChunks[get_local_index(pLocal)]
-                            = load_chunk(Vector3i(x, y, z) + chunkOffset);
-                    ++numReloaded;
+                    Vector3i oldIndex = pOld % Vector3i(loadDistance);
+
+                    if (oldIndex.x < 0) {
+                        oldIndex.x += loadDistance;
+                    }
+
+                    if (oldIndex.y < 0) {
+                        oldIndex.y += loadDistance;
+                    }
+
+                    if (oldIndex.z < 0) {
+                        oldIndex.z += loadDistance;
+                    }
+
+                    if (Chunk* chnk = loadedChunks[get_local_index(oldIndex)];
+                            chnk) {
+                        newChunks[get_local_index(pLocal)] = chnk;
+                        chnk->load(pLocal + newOffset, perlin);
+                        chnk->rebuild();
+                    }
+                    else {
+                        DEBUG_LOG_TEMP2("MISSING CHUNK REEEEE");
+                    }
                 }
             }
         }
@@ -49,104 +91,86 @@ void ChunkManager::load_chunks(const Camera& camera) {
 
     chunkOffset = newOffset;
 
-    loadedChunks.assign(newChunks,
-            newChunks + loadDistance * loadDistance * loadDistance);
-    
-    if (numReloaded > 0) {
-        DEBUG_LOG_TEMP("Reloaded %d chunks; delta = (%d, %d, %d)",
-                numReloaded, deltaOffset.x, deltaOffset.y, deltaOffset.z);
-    }
+    Memory::memcpy(loadedChunks, newChunks, CUBE(loadDistance) * sizeof(Chunk*));
 }
 
 void ChunkManager::render_chunks(RenderTarget& target,
         Shader& shader, const Camera& camera) {
     update_render_list(camera);
 
-    for (auto ptr : renderList) {
-        if (auto c = ptr.lock(); c) {
-            const Matrix4f mvp = camera.viewProjection
-                    * Math::translate(Matrix4f(1.f),
-                    static_cast<Vector3f>(c->getPosition()) * static_cast<float>(Chunk::CHUNK_SIZE));
-            c->getVertexArray().updateBuffer(3, &mvp, sizeof(Matrix4f));
-            context->draw(target, shader, c->getVertexArray(), GL_TRIANGLES);
-        }
+    for (int32 i = 0; i < numToRender; ++i) {
+        Chunk* c = renderList[i];
+        const Matrix4f mvp = camera.viewProjection
+                * Math::translate(Matrix4f(1.f),
+                static_cast<Vector3f>(c->getPosition()) * static_cast<float>(Chunk::CHUNK_SIZE));
+
+        // TODO: remoev camera buffer
+        c->getVertexArray().updateBuffer(3, &mvp, sizeof(Matrix4f));
+        context->draw(target, shader, c->getVertexArray(), GL_TRIANGLES);
     }
+
+    //DEBUG_LOG_TEMP("Rendered %ld/%d chunks", renderList.size(),
+    //        loadDistance * loadDistance * loadDistance);
 }
 
 ChunkManager::~ChunkManager() {
+    for (int32 i = 0; i < CUBE(loadDistance); ++i) {
+        chunkPool[i].~Chunk();
+    }
+
+    Memory::free(renderList);
+
+    Memory::free(loadedChunks);
+    Memory::free(chunkPool);
 }
 
 void ChunkManager::update_render_list(const Camera& camera) {
-    renderList.clear();
+    numToRender = 0;
 
-    for (uint32 z = 0; z < loadDistance; ++z) {
-        for (uint32 y = 0; y < loadDistance; ++y) {
-            for (uint32 x = 0; x < loadDistance; ++x) {
+    for (int32 z = 0; z < loadDistance; ++z) {
+        for (int32 y = 0; y < loadDistance; ++y) {
+            for (int32 x = 0; x < loadDistance; ++x) {
                 const Vector3i pos(x, y, z);
 
-                auto c = loadedChunks[get_local_index(pos)];
+                Chunk* c = loadedChunks[get_local_index(pos)];
 
-                if (!c) {
+                if (c->isEmpty()) {
                     continue;
                 }
 
                 if (x > 0 && x < loadDistance - 1 && y > 0 && y < loadDistance - 1
                         && z > 0 && z < loadDistance - 1) {
                     if (chunk_is_occluded(pos + chunkOffset)) {
-                        //continue;
+                        continue;
                     }
                 }
 
-                renderList.push_back(c);
+                renderList[numToRender++] = c;
             }
         }
     }
 }
 
-Memory::SharedPointer<Chunk> ChunkManager::load_chunk(const Vector3i& chunkPos) {
-    auto c = Memory::make_shared<Chunk>(*context, chunkPos);
-
-    for (uint32 y = 0; y < 16; ++y) {
-        BlockType b = y == 15 ? BlockType::GRASS : BlockType::DIRT;
-
-        for (uint32 x = 0; x < 16; ++x) {
-            for (uint32 z = 0; z < 16; ++z) {
-                c->get(x, y, z).set_active(true);
-                c->get(x, y, z).set_type(b);
-            }
-        }
-    }
-
-    if (chunkPos.x == 3 && chunkPos.y == 1 && chunkPos.z == 1) {
-        c->get(15, 5, 5).set_active(false);
-    }
-
-    c->build_chunk();
-
-    //loadedChunks[get_local_index(chunkPos - chunkOffset)] = c;
-    return c;
-}
-
-uint32 ChunkManager::get_local_index(const Vector3i& localPos) const {
+int32 ChunkManager::get_local_index(const Vector3i& localPos) const {
     return localPos.x * loadDistance * loadDistance
             + localPos.y * loadDistance + localPos.z;
 }
 
-Memory::WeakPointer<Chunk> ChunkManager::get_chunk_by_position(const Vector3i& worldPos) {
+Chunk* ChunkManager::get_chunk_by_position(const Vector3i& worldPos) {
     return loadedChunks[get_local_index(worldPos - chunkOffset)];
 }
 
-Memory::WeakPointer<Chunk> ChunkManager::get_chunk_by_position(const Vector3i& worldPos) const {
+Chunk* ChunkManager::get_chunk_by_position(const Vector3i& worldPos) const {
     return loadedChunks[get_local_index(worldPos - chunkOffset)];
 }
 
 bool ChunkManager::chunk_is_occluded(const Vector3i& chunkPos) const {
-    auto negX = get_chunk_by_position(chunkPos - Vector3i(1, 0, 0)).lock();
-    auto posX = get_chunk_by_position(chunkPos + Vector3i(1, 0, 0)).lock();
-    auto negY = get_chunk_by_position(chunkPos - Vector3i(0, 1, 0)).lock();
-    auto posY = get_chunk_by_position(chunkPos + Vector3i(0, 1, 0)).lock();
-    auto negZ = get_chunk_by_position(chunkPos - Vector3i(0, 0, 1)).lock();
-    auto posZ = get_chunk_by_position(chunkPos + Vector3i(0, 0, 1)).lock();
+    Chunk* negX = get_chunk_by_position(chunkPos - Vector3i(1, 0, 0));
+    Chunk* posX = get_chunk_by_position(chunkPos + Vector3i(1, 0, 0));
+    Chunk* negY = get_chunk_by_position(chunkPos - Vector3i(0, 1, 0));
+    Chunk* posY = get_chunk_by_position(chunkPos + Vector3i(0, 1, 0));
+    Chunk* negZ = get_chunk_by_position(chunkPos - Vector3i(0, 0, 1));
+    Chunk* posZ = get_chunk_by_position(chunkPos + Vector3i(0, 0, 1));
 
     return (negX && posX && negY && posY && negZ && posZ
             && negX->occludesPosX() && posX->occludesNegX()

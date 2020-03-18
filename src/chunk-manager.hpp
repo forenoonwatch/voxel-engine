@@ -1,16 +1,18 @@
 #pragma once
 
 #include <engine/core/common.hpp>
-#include <engine/core/memory.hpp>
 #include <engine/core/array-list.hpp>
 
 #include <engine/math/vector.hpp>
+
+#include <libnoise/noise.h>
 
 class Chunk;
 class RenderContext;
 class RenderTarget;
 class Shader;
 class Camera;
+class VertexArray;
 
 class ChunkManager {
     public:
@@ -24,23 +26,25 @@ class ChunkManager {
     private:
         NULL_COPY_AND_ASSIGN(ChunkManager);
 
-        ArrayList<Memory::SharedPointer<Chunk>> loadedChunks;
+        Chunk* chunkPool;
+        Chunk** loadedChunks;
         int32 loadDistance;
 
-        ArrayList<Memory::WeakPointer<Chunk>> renderList;
+        Chunk** renderList;
+        int32 numToRender;
 
         Vector3i chunkOffset;
 
         RenderContext* context;
 
+        noise::module::Perlin perlin;
+
         void update_render_list(const Camera& camera);
 
-        Memory::SharedPointer<Chunk> load_chunk(const Vector3i& chunkPos);
+        int32 get_local_index(const Vector3i& localPos) const;
 
-        uint32 get_local_index(const Vector3i& localPos) const;
-
-        Memory::WeakPointer<Chunk> get_chunk_by_position(const Vector3i& worldPos);
-        Memory::WeakPointer<Chunk> get_chunk_by_position(const Vector3i& worldPos) const;
+        Chunk* get_chunk_by_position(const Vector3i& worldPos);
+        Chunk* get_chunk_by_position(const Vector3i& worldPos) const;
 
         bool chunk_is_occluded(const Vector3i& chunkPos) const;
         bool is_valid_local_index(const Vector3i& index) const;

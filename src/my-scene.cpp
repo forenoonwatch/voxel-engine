@@ -9,6 +9,7 @@
 #include <engine/resource/vertex-array-loader.hpp>
 
 #include <engine/application/application.hpp>
+#include <engine/application/input.hpp>
 
 #include <engine/rendering/render-target.hpp>
 
@@ -51,13 +52,19 @@ void MyScene::load() {
             0.f, 0.f, 15.f);
     registry.assign<PlayerInputComponent>(eCam);
 
-    chunkManager = new ChunkManager(getEngine()->getRenderContext(), 4);
+    chunkManager = new ChunkManager(getEngine()->getRenderContext(), 16);
 }
 
 void MyScene::update(float deltaTime) {
     update_player_input(getEngine()->getRegistry(), getEngine()->getInput());
     update_camera_controller(getEngine()->getRegistry(), deltaTime);
     update_camera_system(getEngine()->getRegistry());
+
+    //if (getEngine()->getInput().was_key_pressed(Input::KEY_R)) {
+    //    DEBUG_LOG_TEMP2("Yems");
+        auto* cam = getEngine()->getRegistry().raw<Camera>();
+        chunkManager->load_chunks(*cam);
+    //}
 }
 
 void MyScene::render() {
@@ -70,7 +77,6 @@ void MyScene::render() {
     auto* cam = getEngine()->getRegistry().raw<Camera>();
     //cube->updateBuffer(4, &cam->viewProjection, sizeof(Matrix4f));
 
-    chunkManager->load_chunks(*cam);
     chunkManager->render_chunks(*screen, shader, *cam);
 }
 
