@@ -69,7 +69,7 @@ void Scene<DerivedScene>::run() {
 		updateTimer += passedTime;
 
 		if (fpsTimeCounter >= 1.0) {
-			// TODO: emit FPS
+			DEBUG_LOG_TEMP("FPS: %d", fpsCounter);
 
 			fpsTimeCounter = 0.0;
 			fpsCounter = 0;
