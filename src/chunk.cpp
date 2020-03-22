@@ -2,9 +2,12 @@
 
 #include <engine/rendering/vertex-array.hpp>
 
+#include <engine/math/matrix.hpp>
+
 #include <cstdint>
 
 #include "chunk-manager.hpp"
+#include "terrain-generator.hpp"
 
 static void create_face_posX(const Vector3f&, const Vector3f&, ArrayList<Vector3f>&,
         ArrayList<Vector3f>&, ArrayList<Vector3f>&, ArrayList<uint32>&);
@@ -29,20 +32,16 @@ void Chunk::init(RenderContext& context, const IndexedModel& model) {
     vertexArray = new VertexArray(context, model, GL_STREAM_DRAW);
 }
 
-void Chunk::load(const Vector3i& position,
-        noise::module::Perlin& perlin) {
-    this->position = position;
-    flags = 0;
+void Chunk::load(TerrainGenerator& generator) {
+    std::unique_lock<std::mutex> lock(mutex);
+
+    flags = FLAG_NEEDS_REBUILD;
 
     for (int32 x = 0; x < CHUNK_SIZE; ++x) {
         for (int32 z = 0; z < CHUNK_SIZE; ++z) {
-            double value = perlin.GetValue(
-                    0.01 * (position.x * CHUNK_SIZE + x),
-                    0.01 * (position.z * CHUNK_SIZE + z), 0.5);
-
-            value *= 10;
-
-            const int32 yMax = static_cast<int>(value);
+            const int32 yMax = generator.getHeight(
+                    (position.x * CHUNK_SIZE + x),
+                    (position.z * CHUNK_SIZE + z));
 
             for (int32 y = 0; y < CHUNK_SIZE; ++y) {
                 const int32 yGlobal = position.y * CHUNK_SIZE + y;
@@ -64,6 +63,8 @@ void Chunk::load(const Vector3i& position,
 }
 
 void Chunk::rebuild() {
+    std::unique_lock<std::mutex> lock(mutex);
+
     ArrayList<Vector3f> positions;
     ArrayList<Vector3f> normals;
     ArrayList<Vector3f> colors;
@@ -72,6 +73,7 @@ void Chunk::rebuild() {
     uint32 occFlags = FLAG_ALL_OCCLUSIONS;
 
     flags |= FLAG_EMPTY;
+    flags &= ~FLAG_NEEDS_REBUILD;
 
     for (uint32 z = 0; z < CHUNK_SIZE; ++z) {
         for (uint32 y = 0; y < CHUNK_SIZE; ++y) {
@@ -148,10 +150,22 @@ void Chunk::rebuild() {
 
     flags |= occFlags;
 
+    Matrix4f pos = Math::translate(Matrix4f(1.f),
+            static_cast<Vector3f>(position)
+            * static_cast<float>(CHUNK_SIZE));
+
     vertexArray->updateBuffer(0, positions.data(), positions.size() * sizeof(Vector3f));
     vertexArray->updateBuffer(1, &normals[0], normals.size() * sizeof(Vector3f));
     vertexArray->updateBuffer(2, &colors[0], colors.size() * sizeof(Vector3f));
+    vertexArray->updateBuffer(3, &pos, sizeof(Matrix4f));
     vertexArray->updateIndices(&indices[0], indices.size());
+}
+
+void Chunk::setPosition(const Vector3i& position) noexcept {
+    std::unique_lock<std::mutex> lock(mutex);
+
+    flags |= FLAG_NEEDS_REBUILD;
+    this->position = position;
 }
 
 Block& Chunk::get(uint32 x, uint32 y, uint32 z) noexcept {
@@ -192,6 +206,18 @@ bool Chunk::occludesPosZ() const noexcept {
 
 bool Chunk::isEmpty() const noexcept {
     return flags & FLAG_EMPTY;
+}
+
+bool Chunk::needsRebuild() const noexcept {
+    return flags & FLAG_NEEDS_REBUILD;
+}
+
+bool Chunk::shouldRender() const noexcept {
+    return !isEmpty() && !needsRebuild();
+}
+
+std::mutex& Chunk::getMutex() noexcept {
+    return mutex;
 }
 
 Chunk::~Chunk() {

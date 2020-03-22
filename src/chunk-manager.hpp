@@ -2,10 +2,15 @@
 
 #include <engine/core/common.hpp>
 #include <engine/core/array-list.hpp>
+#include <engine/core/queue.hpp>
 
 #include <engine/math/vector.hpp>
 
-#include <libnoise/noise.h>
+#include <thread>
+#include <mutex>
+#include <atomic>
+
+#include "terrain-generator.hpp"
 
 class Chunk;
 class RenderContext;
@@ -18,7 +23,7 @@ class ChunkManager {
     public:
         ChunkManager(RenderContext& context, int32 loadDistance);
 
-        void load_chunks(const Camera& camera);
+        void update(const Camera& camera);
         void render_chunks(RenderTarget& target, Shader& shader,
                 const Camera& camera);
 
@@ -30,6 +35,12 @@ class ChunkManager {
         Chunk** loadedChunks;
         int32 loadDistance;
 
+        Queue<Chunk*> chunksToLoad;
+        std::mutex loadMutex;
+
+        Queue<Chunk*> chunksToRebuild;
+        std::mutex rebuildMutex;
+
         Chunk** renderList;
         int32 numToRender;
 
@@ -37,8 +48,15 @@ class ChunkManager {
 
         RenderContext* context;
 
-        noise::module::Perlin perlin;
+        TerrainGenerator terrainGenerator;
 
+        std::atomic<bool> running;
+
+        ArrayList<std::thread> loadThreads;
+
+        void load_chunks();
+
+        void update_load_list(const Camera& camera);
         void update_render_list(const Camera& camera);
 
         int32 get_local_index(const Vector3i& localPos) const;

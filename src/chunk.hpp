@@ -4,11 +4,12 @@
 
 #include <engine/core/common.hpp>
 
-#include <libnoise/noise.h>
+#include <mutex>
 
 class RenderContext;
 class VertexArray;
 class IndexedModel;
+class TerrainGenerator;
 
 class Chunk final {
     public:
@@ -19,9 +20,10 @@ class Chunk final {
 
         void init(RenderContext& context, const IndexedModel& model);
 
-        void load(const Vector3i& position,
-                noise::module::Perlin& perlin);
+        void load(TerrainGenerator& terrainGenerator);
         void rebuild();
+
+        void setPosition(const Vector3i& position) noexcept;
 
         Block& get(uint32 x, uint32 y, uint32 z) noexcept;
 
@@ -37,6 +39,11 @@ class Chunk final {
         bool occludesPosZ() const noexcept;
 
         bool isEmpty() const noexcept;
+        bool needsRebuild() const noexcept;
+
+        bool shouldRender() const noexcept;
+
+        std::mutex& getMutex() noexcept;
 
         ~Chunk();
     private:
@@ -53,10 +60,13 @@ class Chunk final {
             FLAG_ALL_OCCLUSIONS = 63,
 
             FLAG_EMPTY          = 64,
+            FLAG_NEEDS_REBUILD  = 128
         };
 
         Block blocks[CHUNK_SIZE][CHUNK_SIZE][CHUNK_SIZE];
         VertexArray* vertexArray;
         Vector3i position;
         uint32 flags;
+
+        std::mutex mutex;
 };

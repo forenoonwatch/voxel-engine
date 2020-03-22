@@ -18,7 +18,8 @@ ChunkManager::ChunkManager(RenderContext& context, int32 loadDistance)
         , loadDistance(loadDistance)
         , renderList((Chunk**)Memory::malloc(CUBE(loadDistance) * sizeof(Chunk*)))
         , chunkOffset(3, 0, 0)
-        , context(&context) {
+        , context(&context)
+        , running {true} {
     IndexedModel model;
     model.allocateElement(3);
     model.allocateElement(3);
@@ -27,12 +28,31 @@ ChunkManager::ChunkManager(RenderContext& context, int32 loadDistance)
     model.setInstancedElementStartIndex(3);
 
     for (int32 i = 0; i < CUBE(loadDistance); ++i) {
+        new (chunkPool + i) Chunk();
+
         chunkPool[i].init(context, model);
         loadedChunks[i] = chunkPool + i;
     }
+
+    for (int32 i = 0; i < 2; ++i) {
+        loadThreads.emplace_back([&]() { load_chunks(); });
+    }
 }
 
-void ChunkManager::load_chunks(const Camera& camera) {
+void ChunkManager::update(const Camera& camera) {
+    update_load_list(camera);
+
+    std::unique_lock<std::mutex> lock(rebuildMutex);
+
+    while (!chunksToRebuild.empty()) {
+        Chunk* chunk = chunksToRebuild.front();
+        chunksToRebuild.pop();
+
+        chunk->rebuild();
+    }
+}
+
+void ChunkManager::update_load_list(const Camera& camera) {
     Vector3i newOffset(camera.invView[3]);
     newOffset /= Chunk::CHUNK_SIZE;
     newOffset -= loadDistance / 2;
@@ -45,6 +65,8 @@ void ChunkManager::load_chunks(const Camera& camera) {
 
     Chunk* newChunks[CUBE(loadDistance)];
 
+    std::unique_lock<std::mutex> lock(loadMutex);
+
     for (int32 x = 0; x < loadDistance; ++x) {
         for (int32 y = 0; y < loadDistance; ++y) {
             for (int32 z = 0; z < loadDistance; ++z) {
@@ -56,8 +78,8 @@ void ChunkManager::load_chunks(const Camera& camera) {
                     newChunks[get_local_index(pLocal)] = chnk;
 
                     if (chnk->getPosition() != pLocal + newOffset) {
-                        chnk->load(pLocal + newOffset, perlin);
-                        chnk->rebuild();
+                        chnk->setPosition(pLocal + newOffset);
+                        chunksToLoad.push(chnk);
                     }
                 }
                 else {
@@ -78,8 +100,9 @@ void ChunkManager::load_chunks(const Camera& camera) {
                     if (Chunk* chnk = loadedChunks[get_local_index(oldIndex)];
                             chnk) {
                         newChunks[get_local_index(pLocal)] = chnk;
-                        chnk->load(pLocal + newOffset, perlin);
-                        chnk->rebuild();
+
+                        chnk->setPosition(pLocal + newOffset);
+                        chunksToLoad.push(chnk);
                     }
                     else {
                         DEBUG_LOG_TEMP2("MISSING CHUNK REEEEE");
@@ -100,21 +123,26 @@ void ChunkManager::render_chunks(RenderTarget& target,
 
     for (int32 i = 0; i < numToRender; ++i) {
         Chunk* c = renderList[i];
-        const Matrix4f mvp = camera.viewProjection
-                * Math::translate(Matrix4f(1.f),
-                static_cast<Vector3f>(c->getPosition()) * static_cast<float>(Chunk::CHUNK_SIZE));
+        std::unique_lock<std::mutex> lock(c->getMutex());
 
-        // TODO: remoev camera buffer
-        c->getVertexArray().updateBuffer(3, &mvp, sizeof(Matrix4f));
         context->draw(target, shader, c->getVertexArray(), GL_TRIANGLES);
     }
 
-    //DEBUG_LOG_TEMP("Rendered %ld/%d chunks", renderList.size(),
-    //        loadDistance * loadDistance * loadDistance);
+    //DEBUG_LOG_TEMP("Rendered %d/%d chunks", numToRender, CUBE(loadDistance));
 }
 
 ChunkManager::~ChunkManager() {
+    running = false;
+
+    for (auto& thread : loadThreads) {
+        thread.join();
+    }
+
+    std::unique_lock<std::mutex> loadLock(loadMutex);
+    std::unique_lock<std::mutex> rebuildLock(rebuildMutex);
+
     for (int32 i = 0; i < CUBE(loadDistance); ++i) {
+        std::unique_lock<std::mutex> lock(chunkPool[i].getMutex());
         chunkPool[i].~Chunk();
     }
 
@@ -122,6 +150,28 @@ ChunkManager::~ChunkManager() {
 
     Memory::free(loadedChunks);
     Memory::free(chunkPool);
+}
+
+void ChunkManager::load_chunks() {
+    while (running) {
+        std::unique_lock<std::mutex> lock(loadMutex);
+
+        Chunk* chunk = nullptr;
+
+        if (!chunksToLoad.empty()) {
+            chunk = chunksToLoad.front();
+            chunksToLoad.pop();
+        }
+
+        lock.unlock();
+
+        if (chunk) {
+            chunk->load(terrainGenerator);
+
+            std::unique_lock<std::mutex> rebuildLock(rebuildMutex);
+            chunksToRebuild.push(chunk);
+        }
+    }
 }
 
 void ChunkManager::update_render_list(const Camera& camera) {
@@ -134,7 +184,7 @@ void ChunkManager::update_render_list(const Camera& camera) {
 
                 Chunk* c = loadedChunks[get_local_index(pos)];
 
-                if (c->isEmpty()) {
+                if (!c->shouldRender()) {
                     continue;
                 }
 

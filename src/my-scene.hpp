@@ -4,6 +4,7 @@
 
 class RenderTarget;
 class ChunkManager;
+class UniformBuffer;
 
 class MyScene final : public Scene<MyScene> {
     public:
@@ -18,4 +19,5 @@ class MyScene final : public Scene<MyScene> {
     private:
         RenderTarget* screen;
         ChunkManager* chunkManager;
+        UniformBuffer* cameraBuffer;
 };

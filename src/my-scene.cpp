@@ -52,7 +52,10 @@ void MyScene::load() {
             0.f, 0.f, 15.f);
     registry.assign<PlayerInputComponent>(eCam);
 
-    chunkManager = new ChunkManager(getEngine()->getRenderContext(), 16);
+    chunkManager = new ChunkManager(getEngine()->getRenderContext(), 32);
+
+    cameraBuffer = new UniformBuffer(getEngine()->getRenderContext(),
+            sizeof(Matrix4f), GL_STREAM_DRAW, 0);
 }
 
 void MyScene::update(float deltaTime) {
@@ -60,11 +63,8 @@ void MyScene::update(float deltaTime) {
     update_camera_controller(getEngine()->getRegistry(), deltaTime);
     update_camera_system(getEngine()->getRegistry());
 
-    //if (getEngine()->getInput().was_key_pressed(Input::KEY_R)) {
-    //    DEBUG_LOG_TEMP2("Yems");
-        auto* cam = getEngine()->getRegistry().raw<Camera>();
-        chunkManager->load_chunks(*cam);
-    //}
+    auto* cam = getEngine()->getRegistry().raw<Camera>();
+    chunkManager->update(*cam);
 }
 
 void MyScene::render() {
@@ -75,12 +75,14 @@ void MyScene::render() {
     auto& context = getEngine()->getRenderContext();
 
     auto* cam = getEngine()->getRegistry().raw<Camera>();
-    //cube->updateBuffer(4, &cam->viewProjection, sizeof(Matrix4f));
+
+    cameraBuffer->update(&cam->viewProjection);
 
     chunkManager->render_chunks(*screen, shader, *cam);
 }
 
 void MyScene::unload() {
+    delete cameraBuffer;
     delete chunkManager;
     delete screen;
 }
