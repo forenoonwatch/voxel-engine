@@ -20,7 +20,7 @@ namespace Math {
 	}
 
 	template <typename T>
-	FORCEINLINE float dot(const T& a, const T& b) {
+	FORCEINLINE constexpr float dot(const T& a, const T& b) {
 		return glm::dot(a, b);
 	}
 

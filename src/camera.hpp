@@ -2,6 +2,8 @@
 
 #include <engine/math/matrix.hpp>
 
+#include "frustum.hpp"
+
 class Registry;
 
 struct Camera {
@@ -9,7 +11,12 @@ struct Camera {
     Matrix4f invView;
 
     Matrix4f view;
+
     Matrix4f viewProjection;
+
+    Frustum frustum;
+
+    bool syncFrustum = true;
 };
 
 void update_camera_system(Registry& registry);

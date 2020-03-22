@@ -64,6 +64,11 @@ void MyScene::update(float deltaTime) {
     update_camera_system(getEngine()->getRegistry());
 
     auto* cam = getEngine()->getRegistry().raw<Camera>();
+
+    if (getEngine()->getInput().was_key_pressed(Input::KEY_R)) {
+        cam->syncFrustum = !cam->syncFrustum;
+    }
+
     chunkManager->update(*cam);
 }
 

@@ -34,7 +34,7 @@ ChunkManager::ChunkManager(RenderContext& context, int32 loadDistance)
         loadedChunks[i] = chunkPool + i;
     }
 
-    for (int32 i = 0; i < 2; ++i) {
+    for (int32 i = 0; i < 4; ++i) {
         loadThreads.emplace_back([&]() { load_chunks(); });
     }
 }
@@ -190,10 +190,19 @@ void ChunkManager::update_render_list(const Camera& camera) {
 
                 if (x > 0 && x < loadDistance - 1 && y > 0 && y < loadDistance - 1
                         && z > 0 && z < loadDistance - 1) {
+                    // TODO: prebake occlusions during rebuild phase
                     if (chunk_is_occluded(pos + chunkOffset)) {
                         continue;
                     }
                 }
+
+                const Vector3f worldPos = static_cast<Vector3f>(c->getPosition())
+                        * static_cast<float>(Chunk::CHUNK_SIZE);
+                
+                if (!camera.frustum.intersectsCube(worldPos, Chunk::CHUNK_SIZE)) {
+                    continue;
+                }
+
 
                 renderList[numToRender++] = c;
             }
