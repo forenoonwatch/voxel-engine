@@ -34,7 +34,7 @@ ChunkManager::ChunkManager(RenderContext& context, int32 loadDistance)
         loadedChunks[i] = chunkPool + i;
     }
 
-    for (int32 i = 0; i < 4; ++i) {
+    for (int32 i = 0; i < 1; ++i) {
         loadThreads.emplace_back([&]() { load_chunks(); });
     }
 }
@@ -44,11 +44,14 @@ void ChunkManager::update(const Camera& camera) {
 
     std::unique_lock<std::mutex> lock(rebuildMutex);
 
-    while (!chunksToRebuild.empty()) {
+    int numCanRebuild = 8;
+    while (!chunksToRebuild.empty() && numCanRebuild > 0) {
         Chunk* chunk = chunksToRebuild.front();
         chunksToRebuild.pop();
 
         chunk->rebuild();
+
+        --numCanRebuild;
     }
 }
 
