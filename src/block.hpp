@@ -11,13 +11,24 @@ enum class BlockType {
     NUM_TYPES
 };
 
+enum class Side {
+    SIDE_BACK = 0,
+    SIDE_FRONT,
+    SIDE_LEFT,
+    SIDE_RIGHT,
+    SIDE_TOP,
+    SIDE_BOTTOM,
+
+    NUM_SIDES
+};
+
 class Block {
     public:
+        static Vector3f get_color(const BlockType type) noexcept;
+
         inline Block() noexcept
                 : active(false)
                 , type(BlockType::AIR) {}
-
-        Vector3f get_color() const noexcept;
         
         inline void set_active(bool active) noexcept {
             this->active = active;
@@ -37,5 +48,27 @@ class Block {
     private:
         bool active;
         BlockType type;
+};
+
+struct BlockFace {
+    BlockType type;
+    Side side;
+    bool active = false;
+    bool transparent = false;
+
+    constexpr bool operator==(const BlockFace& bf) const {
+        return type == bf.type && side == bf.side
+                && transparent == bf.transparent;
+    }
+
+    constexpr bool operator!=(const BlockFace& bf) const {
+        return !(*this == bf);
+    }
+
+    constexpr operator bool() const {
+        return active;
+    }
+
+    Vector3f get_normal() const;
 };
 

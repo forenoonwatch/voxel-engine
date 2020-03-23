@@ -9,19 +9,6 @@
 #include "chunk-manager.hpp"
 #include "terrain-generator.hpp"
 
-static void create_face_posX(const Vector3f&, const Vector3f&, ArrayList<Vector3f>&,
-        ArrayList<Vector3f>&, ArrayList<Vector3f>&, ArrayList<uint32>&);
-static void create_face_negX(const Vector3f&, const Vector3f&, ArrayList<Vector3f>&,
-        ArrayList<Vector3f>&, ArrayList<Vector3f>&, ArrayList<uint32>&);
-static void create_face_posY(const Vector3f&, const Vector3f&, ArrayList<Vector3f>&,
-        ArrayList<Vector3f>&, ArrayList<Vector3f>&, ArrayList<uint32>&);
-static void create_face_negY(const Vector3f&, const Vector3f&, ArrayList<Vector3f>&,
-        ArrayList<Vector3f>&, ArrayList<Vector3f>&, ArrayList<uint32>&);
-static void create_face_posZ(const Vector3f&, const Vector3f&, ArrayList<Vector3f>&,
-        ArrayList<Vector3f>&, ArrayList<Vector3f>&, ArrayList<uint32>&);
-static void create_face_negZ(const Vector3f&, const Vector3f&, ArrayList<Vector3f>&,
-        ArrayList<Vector3f>&, ArrayList<Vector3f>&, ArrayList<uint32>&);
-
 Chunk::Chunk()
         : blocks {}
         , vertexArray(nullptr)
@@ -62,103 +49,134 @@ void Chunk::load(TerrainGenerator& generator) {
     }
 }
 
-void Chunk::rebuild() {
+void Chunk::rebuild(Memory::SharedPointer<ChunkBuilder> cb) {
     std::unique_lock<std::mutex> lock(mutex);
-
-    ArrayList<Vector3f> positions;
-    ArrayList<Vector3f> normals;
-    ArrayList<Vector3f> colors;
-    ArrayList<uint32> indices;
 
     uint32 occFlags = FLAG_ALL_OCCLUSIONS;
 
-    flags |= FLAG_EMPTY;
-    flags &= ~FLAG_NEEDS_REBUILD;
+    //flags |= FLAG_EMPTY;
+    //flags &= ~FLAG_NEEDS_REBUILD;
 
-    for (uint32 z = 0; z < CHUNK_SIZE; ++z) {
-        for (uint32 y = 0; y < CHUNK_SIZE; ++y) {
-            for (uint32 x = 0; x < CHUNK_SIZE; ++x) {
-                if (x == 0) {
-                    if ((occFlags & FLAG_OCCLUDES_NEG_X) && !blocks[x][y][z].is_active()) {
-                        occFlags &= ~FLAG_OCCLUDES_NEG_X;
+    Side side = Side::SIDE_BACK;
+    int n;
+
+    BlockFace mask[CHUNK_SIZE * CHUNK_SIZE];
+
+    for (bool backFace = true, b = false; b != backFace;
+            backFace = backFace && b, b = !b) {
+        for (int d  = 0; d < 3; ++d) {
+            int u = (d + 1) % 3;
+            int v = (d + 2) % 3;
+
+            Vector3i x(0, 0, 0);
+            Vector3i q(0, 0, 0);
+
+            q[d] = 1;
+
+            switch (d) {
+                case 0:
+                    side = backFace ? Side::SIDE_LEFT : Side::SIDE_RIGHT; // TODO: ==?
+                    break;
+                case 1:
+                    side = backFace ? Side::SIDE_BOTTOM : Side::SIDE_TOP;
+                    break;
+                case 2:
+                    side = backFace ? Side::SIDE_BACK : Side::SIDE_FRONT;
+                    break;
+            }
+
+            for (x[d] = -1; x[d] < CHUNK_SIZE;) {
+                n = 0;
+
+                for (x[v] = 0; x[v] < CHUNK_SIZE; ++x[v]) {
+                    for (x[u] = 0; x[u] < CHUNK_SIZE; ++x[u]) {
+                        if (backFace) {
+                            if (x[d] < CHUNK_SIZE - 1) {
+                                auto& face = mask[n++];
+                                get_block_face(face, x + q, side);
+                            }
+                            else {
+                                ++n;
+                            }
+                        }
+                        else {
+                            if (x[d] >= 0) {
+                                auto& face = mask[n++];
+                                get_block_face(face, x, side);
+                            }
+                            else {
+                                ++n;
+                            }
+                        }
                     }
                 }
-                else if (x == CHUNK_SIZE - 1) {
-                    if ((occFlags & FLAG_OCCLUDES_POS_X) && !blocks[x][y][z].is_active()) {
-                        occFlags &= ~FLAG_OCCLUDES_POS_X;
+
+                ++x[d];
+
+                n = 0;
+
+                for (int j = 0; j < CHUNK_SIZE; ++j) {
+                    for (int i = 0; i < CHUNK_SIZE;) {
+                        if (mask[n]) {
+                            int w, h; // TODO: shid loop computes width iteratively?
+                            bool done = false;
+
+                            for (w = 1; i + w < CHUNK_SIZE && mask[n + w]
+                                    && (mask[n + w] == mask[n]); ++w) {}
+
+                            for (h = 1; j + h < CHUNK_SIZE; ++h) {
+                                for (int k = 0; k < w; ++k) {
+                                    if (!mask[n + k + h * CHUNK_SIZE]
+                                            || mask[n + k + h * CHUNK_SIZE] != mask[n]) {
+                                        done = true;
+                                        break;
+                                    }
+                                }
+
+                                if (done) {
+                                    break;
+                                }
+                            }
+
+                            if (!mask[n].transparent) {
+                                x[u] = i;
+                                x[v] = j;
+
+                                Vector3i du(0, 0, 0);
+                                Vector3i dv(0, 0, 0);
+
+                                du[u] = w;
+                                dv[v] = h;
+
+                                cb->add_quad(x, x + du, x + du + dv, x + dv,
+                                        w, h, mask[n], backFace);
+                            }
+
+                            for (int l = 0; l < h; ++l) {
+                                for (int k = 0; k < w; ++k) {
+                                    mask[n + k + l * CHUNK_SIZE].active = false;
+                                }
+                            }
+
+                            i += w;
+                            n += w;
+                        }
+                        else {
+                            ++i;
+                            ++n;
+                        }
                     }
-                }
-
-                if (y == 0) {
-                    if ((occFlags & FLAG_OCCLUDES_NEG_Y) && !blocks[x][y][z].is_active()) {
-                        occFlags &= ~FLAG_OCCLUDES_NEG_Y;
-                    }
-                }
-                else if (y == CHUNK_SIZE - 1) {
-                    if ((occFlags & FLAG_OCCLUDES_POS_Y) && !blocks[x][y][z].is_active()) {
-                        occFlags &= ~FLAG_OCCLUDES_POS_Y;
-                    }
-                }
-
-                if (z == 0) {
-                    if ((occFlags & FLAG_OCCLUDES_NEG_Z) && !blocks[x][y][z].is_active()) {
-                        occFlags &= ~FLAG_OCCLUDES_NEG_Z;
-                    }
-                }
-                else if (z == CHUNK_SIZE - 1) {
-                    if ((occFlags & FLAG_OCCLUDES_POS_Z) && !blocks[x][y][z].is_active()) {
-                        occFlags &= ~FLAG_OCCLUDES_POS_Z;
-                    }
-                }
-
-                if (blocks[x][y][z].is_active()) {
-                    flags &= ~FLAG_EMPTY;
-                }
-                else {
-                    continue;
-                }
-
-                const Vector3f pos(x, y, z);
-                const Vector3f color = blocks[x][y][z].get_color();
-
-                if (x == 0 || !blocks[x - 1][y][z].is_active()) {
-                    create_face_negX(pos, color, positions, normals, colors, indices);
-                }
-
-                if (x == CHUNK_SIZE - 1 || !blocks[x + 1][y][z].is_active()) {
-                    create_face_posX(pos, color, positions, normals, colors, indices);
-                }
-
-                if (y == 0 || !blocks[x][y - 1][z].is_active()) {
-                    create_face_negY(pos, color, positions, normals, colors, indices);
-                }
-
-                if (y == CHUNK_SIZE - 1 || !blocks[x][y + 1][z].is_active()) {
-                    create_face_posY(pos, color, positions, normals, colors, indices);
-                }
-
-                if (z == 0 || !blocks[x][y][z - 1].is_active()) {
-                    create_face_negZ(pos, color, positions, normals, colors, indices);
-                }
-
-                if (z == CHUNK_SIZE - 1 || !blocks[x][y][z + 1].is_active()) {
-                    create_face_posZ(pos, color, positions, normals, colors, indices);
                 }
             }
         }
     }
 
-    flags |= occFlags;
+    if (cb->is_empty()) {
+        flags |= FLAG_EMPTY;
+    }
 
-    Matrix4f pos = Math::translate(Matrix4f(1.f),
-            static_cast<Vector3f>(position)
-            * static_cast<float>(CHUNK_SIZE));
-
-    vertexArray->updateBuffer(0, positions.data(), positions.size() * sizeof(Vector3f));
-    vertexArray->updateBuffer(1, &normals[0], normals.size() * sizeof(Vector3f));
-    vertexArray->updateBuffer(2, &colors[0], colors.size() * sizeof(Vector3f));
-    vertexArray->updateBuffer(3, &pos, sizeof(Matrix4f));
-    vertexArray->updateIndices(&indices[0], indices.size());
+    //flags |= occFlags;
+    cb->set_chunk(this);
 }
 
 void Chunk::setPosition(const Vector3i& position) noexcept {
@@ -166,6 +184,10 @@ void Chunk::setPosition(const Vector3i& position) noexcept {
 
     flags |= FLAG_NEEDS_REBUILD;
     this->position = position;
+}
+
+void Chunk::setRebuilt() noexcept {
+    flags &= ~FLAG_NEEDS_REBUILD;
 }
 
 Block& Chunk::get(uint32 x, uint32 y, uint32 z) noexcept {
@@ -226,152 +248,8 @@ Chunk::~Chunk() {
     }
 }
 
-static void create_face_posX(const Vector3f& pos, const Vector3f& color,
-        ArrayList<Vector3f>& positions,
-        ArrayList<Vector3f>& normals, ArrayList<Vector3f>& colors,
-        ArrayList<uint32>& indices) {
-    const uint32 baseIndex = positions.size();
-
-    positions.push_back(pos + Vector3f(Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE));
-    positions.push_back(pos + Vector3f(Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE));
-    positions.push_back(pos + Vector3f(Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE));
-    positions.push_back(pos + Vector3f(Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE));
-    
-    for (uint32 i = 0; i < 4; ++i) {
-        normals.emplace_back(1.f, 0.f, 0.f);
-        colors.emplace_back(color);
-    }
-
-    indices.push_back(baseIndex);
-    indices.push_back(baseIndex + 1);
-    indices.push_back(baseIndex + 2);
-
-    indices.push_back(baseIndex);
-    indices.push_back(baseIndex + 2);
-    indices.push_back(baseIndex + 3);
-}
-
-static void create_face_negX(const Vector3f& pos, const Vector3f& color,
-        ArrayList<Vector3f>& positions,
-        ArrayList<Vector3f>& normals, ArrayList<Vector3f>& colors,
-        ArrayList<uint32>& indices) {
-    const uint32 baseIndex = positions.size();
-
-    positions.push_back(pos + Vector3f(-Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE));
-    positions.push_back(pos + Vector3f(-Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE));
-    positions.push_back(pos + Vector3f(-Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE));
-    positions.push_back(pos + Vector3f(-Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE));
-    
-    for (uint32 i = 0; i < 4; ++i) {
-        normals.emplace_back(-1.f, 0.f, 0.f);
-        colors.emplace_back(color);
-    }
-
-    indices.push_back(baseIndex + 2);
-    indices.push_back(baseIndex + 1);
-    indices.push_back(baseIndex);
-
-    indices.push_back(baseIndex + 3);
-    indices.push_back(baseIndex + 2);
-    indices.push_back(baseIndex);
-}
-
-static void create_face_posY(const Vector3f& pos, const Vector3f& color,
-        ArrayList<Vector3f>& positions,
-        ArrayList<Vector3f>& normals, ArrayList<Vector3f>& colors,
-        ArrayList<uint32>& indices) {
-    const uint32 baseIndex = positions.size();
-
-    positions.push_back(pos + Vector3f(Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE));
-    positions.push_back(pos + Vector3f(-Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE));
-    positions.push_back(pos + Vector3f(-Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE));
-    positions.push_back(pos + Vector3f(Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE));
-    
-    for (uint32 i = 0; i < 4; ++i) {
-        normals.emplace_back(0.f, 1.f, 0.f);
-        colors.emplace_back(color);
-    }
-
-    indices.push_back(baseIndex);
-    indices.push_back(baseIndex + 1);
-    indices.push_back(baseIndex + 2);
-
-    indices.push_back(baseIndex);
-    indices.push_back(baseIndex + 2);
-    indices.push_back(baseIndex + 3);
-}
-
-static void create_face_negY(const Vector3f& pos, const Vector3f& color,
-        ArrayList<Vector3f>& positions,
-        ArrayList<Vector3f>& normals, ArrayList<Vector3f>& colors,
-        ArrayList<uint32>& indices) {
-    const uint32 baseIndex = positions.size();
-
-    positions.push_back(pos + Vector3f(Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE));
-    positions.push_back(pos + Vector3f(-Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE));
-    positions.push_back(pos + Vector3f(-Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE));
-    positions.push_back(pos + Vector3f(Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE));
-    
-    for (uint32 i = 0; i < 4; ++i) {
-        normals.emplace_back(0.f, -1.f, 0.f);
-        colors.emplace_back(color);
-    }
-
-    indices.push_back(baseIndex + 2);
-    indices.push_back(baseIndex + 1);
-    indices.push_back(baseIndex);
-
-    indices.push_back(baseIndex + 3);
-    indices.push_back(baseIndex + 2);
-    indices.push_back(baseIndex);
-}
-
-static void create_face_posZ(const Vector3f& pos, const Vector3f& color,
-        ArrayList<Vector3f>& positions,
-        ArrayList<Vector3f>& normals, ArrayList<Vector3f>& colors,
-        ArrayList<uint32>& indices) {
-    const uint32 baseIndex = positions.size();
-
-    positions.push_back(pos + Vector3f(Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE));
-    positions.push_back(pos + Vector3f(-Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE));
-    positions.push_back(pos + Vector3f(-Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE));
-    positions.push_back(pos + Vector3f(Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE));
-    
-    for (uint32 i = 0; i < 4; ++i) {
-        normals.emplace_back(0.f, 0.f, 1.f);
-        colors.emplace_back(color);
-    }
-
-    indices.push_back(baseIndex);
-    indices.push_back(baseIndex + 1);
-    indices.push_back(baseIndex + 2);
-
-    indices.push_back(baseIndex);
-    indices.push_back(baseIndex + 2);
-    indices.push_back(baseIndex + 3);
-}
-
-static void create_face_negZ(const Vector3f& pos, const Vector3f& color,
-        ArrayList<Vector3f>& positions,
-        ArrayList<Vector3f>& normals, ArrayList<Vector3f>& colors,
-        ArrayList<uint32>& indices) {
-    const uint32 baseIndex = positions.size();
-
-    positions.push_back(pos + Vector3f(Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE));
-    positions.push_back(pos + Vector3f(-Chunk::BLOCK_RENDER_SIZE, Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE));
-    positions.push_back(pos + Vector3f(-Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE));
-    positions.push_back(pos + Vector3f(Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE, -Chunk::BLOCK_RENDER_SIZE));
-    
-    for (uint32 i = 0; i < 4; ++i) {
-        normals.emplace_back(0.f, 0.f, -1.f);
-        colors.emplace_back(color);
-    }
-
-    indices.push_back(baseIndex + 2);
-    indices.push_back(baseIndex + 1);
-    indices.push_back(baseIndex);
-
-    indices.push_back(baseIndex + 3);
-    indices.push_back(baseIndex + 2);
-    indices.push_back(baseIndex);
+void Chunk::get_block_face(BlockFace& bf, const Vector3i& pos, Side side) {
+    bf.type = blocks[pos.x][pos.y][pos.z].get_type();
+    bf.side = side;
+    bf.active = blocks[pos.x][pos.y][pos.z].is_active();
 }

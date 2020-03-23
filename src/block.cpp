@@ -1,6 +1,6 @@
 #include "block.hpp"
 
-Vector3f Block::get_color() const noexcept {
+Vector3f Block::get_color(const BlockType type) noexcept {
     switch (type) {
         case BlockType::DIRT:
             return Vector3f(127.f / 255.f, 91.f / 255.f, 40.f / 255.f);
@@ -11,4 +11,23 @@ Vector3f Block::get_color() const noexcept {
         default:
             return Vector3f(0.f, 0.f, 0.f);
     }
+}
+
+Vector3f BlockFace::get_normal() const {
+    switch (side) {
+        case Side::SIDE_BACK:
+            return Vector3f(0, 0, 1);
+        case Side::SIDE_FRONT:
+            return Vector3f(0, 0, -1);
+        case Side::SIDE_LEFT:
+            return Vector3f(-1, 0, 0);
+        case Side::SIDE_RIGHT:
+            return Vector3f(1, 0, 0);
+        case Side::SIDE_BOTTOM:
+            return Vector3f(0, -1, 0);
+        case Side::SIDE_TOP:
+            return Vector3f(0, 1, 0);
+    }
+
+    return Vector3f();
 }

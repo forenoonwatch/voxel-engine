@@ -1,6 +1,8 @@
 #pragma once
 
 #include <engine/core/common.hpp>
+#include <engine/core/memory.hpp>
+
 #include <engine/core/array-list.hpp>
 #include <engine/core/queue.hpp>
 
@@ -18,6 +20,7 @@ class RenderTarget;
 class Shader;
 class Camera;
 class VertexArray;
+class ChunkBuilder;
 
 class ChunkManager {
     public:
@@ -41,6 +44,9 @@ class ChunkManager {
         Queue<Chunk*> chunksToRebuild;
         std::mutex rebuildMutex;
 
+        Queue<Memory::SharedPointer<ChunkBuilder>> chunksToBuffer;
+        std::mutex bufferMutex;
+
         Chunk** renderList;
         int32 numToRender;
 
@@ -53,8 +59,10 @@ class ChunkManager {
         std::atomic<bool> running;
 
         ArrayList<std::thread> loadThreads;
+        ArrayList<std::thread> rebuildThreads;
 
         void load_chunks();
+        void rebuild_chunks();
 
         void update_load_list(const Camera& camera);
         void update_render_list(const Camera& camera);

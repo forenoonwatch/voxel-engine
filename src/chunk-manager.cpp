@@ -12,6 +12,8 @@
 
 #define CUBE(n) ((n) * (n) * (n))
 
+#define NUM_THREADS 2
+
 ChunkManager::ChunkManager(RenderContext& context, int32 loadDistance)
         : chunkPool((Chunk*)Memory::malloc(CUBE(loadDistance) * sizeof(Chunk)))
         , loadedChunks((Chunk**)Memory::malloc(CUBE(loadDistance) * sizeof(Chunk*)))
@@ -34,24 +36,22 @@ ChunkManager::ChunkManager(RenderContext& context, int32 loadDistance)
         loadedChunks[i] = chunkPool + i;
     }
 
-    for (int32 i = 0; i < 1; ++i) {
+    for (int32 i = 0; i < NUM_THREADS; ++i) {
         loadThreads.emplace_back([&]() { load_chunks(); });
+        rebuildThreads.emplace_back([&]() { rebuild_chunks(); });
     }
 }
 
 void ChunkManager::update(const Camera& camera) {
     update_load_list(camera);
 
-    std::unique_lock<std::mutex> lock(rebuildMutex);
+    std::unique_lock<std::mutex> lock(bufferMutex);
 
-    int numCanRebuild = 8;
-    while (!chunksToRebuild.empty() && numCanRebuild > 0) {
-        Chunk* chunk = chunksToRebuild.front();
-        chunksToRebuild.pop();
+    while (!chunksToBuffer.empty()) {
+        auto cb = chunksToBuffer.front();
+        chunksToBuffer.pop();
 
-        chunk->rebuild();
-
-        --numCanRebuild;
+        cb->fill_buffers();
     }
 }
 
@@ -118,6 +118,29 @@ void ChunkManager::update_load_list(const Camera& camera) {
     chunkOffset = newOffset;
 
     Memory::memcpy(loadedChunks, newChunks, CUBE(loadDistance) * sizeof(Chunk*));
+}
+
+void ChunkManager::rebuild_chunks() {
+    while (running) {
+        std::unique_lock<std::mutex> lock(rebuildMutex);
+
+        Chunk* chunk = nullptr;
+
+        if (!chunksToRebuild.empty()) {
+            chunk = chunksToRebuild.front();
+            chunksToRebuild.pop();
+        }
+
+        lock.unlock();
+
+        if (chunk) {
+            auto cb = Memory::make_shared<ChunkBuilder>();
+            chunk->rebuild(cb);
+
+            std::unique_lock<std::mutex> bufferLock(bufferMutex);
+            chunksToBuffer.push(cb);
+        }
+    }
 }
 
 void ChunkManager::render_chunks(RenderTarget& target,

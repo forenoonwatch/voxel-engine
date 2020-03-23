@@ -2,7 +2,10 @@
 
 #include "block.hpp"
 
+#include "chunk-builder.hpp"
+
 #include <engine/core/common.hpp>
+#include <engine/core/memory.hpp>
 
 #include <mutex>
 
@@ -13,7 +16,7 @@ class TerrainGenerator;
 
 class Chunk final {
     public:
-        static constexpr const uint32 CHUNK_SIZE = 16;
+        static constexpr const int32 CHUNK_SIZE = 16;
         static constexpr const float BLOCK_RENDER_SIZE = 0.5f;
 
         Chunk();
@@ -21,9 +24,11 @@ class Chunk final {
         void init(RenderContext& context, const IndexedModel& model);
 
         void load(TerrainGenerator& terrainGenerator);
-        void rebuild();
+        void rebuild(Memory::SharedPointer<ChunkBuilder> chunkBuilder);
 
         void setPosition(const Vector3i& position) noexcept;
+
+        void setRebuilt() noexcept;
 
         Block& get(uint32 x, uint32 y, uint32 z) noexcept;
 
@@ -69,4 +74,6 @@ class Chunk final {
         uint32 flags;
 
         std::mutex mutex;
+
+        void get_block_face(BlockFace&, const Vector3i&, Side);
 };
