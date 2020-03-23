@@ -6,9 +6,30 @@
 
 #include "chunk.hpp"
 
+namespace {
+    constexpr Vector3f get_normal(const Side side) {
+        switch (side) {
+            case Side::SIDE_BACK:
+                return Vector3f(0, 0, 1);
+            case Side::SIDE_FRONT:
+                return Vector3f(0, 0, -1);
+            case Side::SIDE_LEFT:
+                return Vector3f(-1, 0, 0);
+            case Side::SIDE_RIGHT:
+                return Vector3f(1, 0, 0);
+            case Side::SIDE_BOTTOM:
+                return Vector3f(0, -1, 0);
+            case Side::SIDE_TOP:
+                return Vector3f(0, 1, 0);
+        }
+
+        return Vector3f();
+    }
+};
+
 void ChunkBuilder::add_quad(const Vector3f& v0, const Vector3f& v1,
-        const Vector3f& v2, const Vector3f& v3, int width, int height,
-        const BlockFace& face, bool backFace) {
+        const Vector3f& v2, const Vector3f& v3,
+        const Block& block, Side side, bool backFace) {
     constexpr const Vector3f STATIC_OFFSET = Vector3f(Chunk::BLOCK_RENDER_SIZE);
 
     const uint32 baseIndex = positions.size();
@@ -19,8 +40,8 @@ void ChunkBuilder::add_quad(const Vector3f& v0, const Vector3f& v1,
     positions.push_back(v2  - STATIC_OFFSET);
 
     for (uint32 i = 0; i < 4; ++i) {
-        normals.push_back(face.get_normal()); // TODO: get normal from block face
-        colors.push_back(Block::get_color(face.type));
+        normals.push_back(get_normal(side)); // TODO: get normal from block face
+        colors.push_back(Block::get_color(block.get_type()));
     }
 
     if (backFace) {
@@ -67,4 +88,8 @@ void ChunkBuilder::set_chunk(Chunk* chunk) {
 
 bool ChunkBuilder::is_empty() const {
     return positions.empty();
+}
+
+size_t ChunkBuilder::num_vertices() const {
+    return positions.size();
 }

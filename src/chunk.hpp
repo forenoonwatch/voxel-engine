@@ -74,6 +74,4 @@ class Chunk final {
         uint32 flags;
 
         std::mutex mutex;
-
-        void get_block_face(BlockFace&, const Vector3i&, Side);
 };

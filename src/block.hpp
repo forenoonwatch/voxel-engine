@@ -45,30 +45,19 @@ class Block {
         inline BlockType get_type() const noexcept {
             return type;
         }
+
+        inline bool operator==(const Block& block) const noexcept {
+            return type == block.type;
+        }
+
+        inline bool operator!=(const Block& block) const noexcept {
+            return type != block.type;
+        }
+
+        inline operator bool() const noexcept {
+            return active;
+        }
     private:
         bool active;
         BlockType type;
 };
-
-struct BlockFace {
-    BlockType type;
-    Side side;
-    bool active = false;
-    bool transparent = false;
-
-    constexpr bool operator==(const BlockFace& bf) const {
-        return type == bf.type && side == bf.side
-                && transparent == bf.transparent;
-    }
-
-    constexpr bool operator!=(const BlockFace& bf) const {
-        return !(*this == bf);
-    }
-
-    constexpr operator bool() const {
-        return active;
-    }
-
-    Vector3f get_normal() const;
-};
-

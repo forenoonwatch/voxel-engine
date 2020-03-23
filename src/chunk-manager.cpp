@@ -164,6 +164,10 @@ ChunkManager::~ChunkManager() {
         thread.join();
     }
 
+    for (auto& thread : rebuildThreads) {
+        thread.join();
+    }
+
     std::unique_lock<std::mutex> loadLock(loadMutex);
     std::unique_lock<std::mutex> rebuildLock(rebuildMutex);
 
