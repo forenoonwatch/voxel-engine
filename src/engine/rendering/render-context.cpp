@@ -27,6 +27,7 @@ RenderContext::RenderContext()
 		, viewportHeight(0)
 		, currentSourceBlend(BLEND_FUNC_NONE)
 		, currentDestBlend(BLEND_FUNC_NONE)
+		, polygonMode(POLYGON_MODE_FILL)
 		, currentShader(0)
 		, currentVertexArray(0)
 		, currentTFB(0)
@@ -225,6 +226,14 @@ void RenderContext::setBlending(enum BlendFunc srcBlend,
 
 	currentSourceBlend = srcBlend;
 	currentDestBlend = destBlend;
+}
+
+void RenderContext::setPolygonMode(enum PolygonMode polygonMode) {
+	if (this->polygonMode != polygonMode) {
+		this->polygonMode = polygonMode;
+
+		glPolygonMode(GL_FRONT_AND_BACK, polygonMode);
+	}
 }
 
 uint32 RenderContext::getVersion() {

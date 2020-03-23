@@ -59,6 +59,8 @@ void MyScene::load() {
 }
 
 void MyScene::update(float deltaTime) {
+    static bool wireframe = false; // TODO: poopoo
+
     update_player_input(getEngine()->getRegistry(), getEngine()->getInput());
     update_camera_controller(getEngine()->getRegistry(), deltaTime);
     update_camera_system(getEngine()->getRegistry());
@@ -67,6 +69,19 @@ void MyScene::update(float deltaTime) {
 
     if (getEngine()->getInput().was_key_pressed(Input::KEY_R)) {
         cam->syncFrustum = !cam->syncFrustum;
+    }
+
+    if (getEngine()->getInput().was_key_pressed(Input::KEY_V)) {
+        wireframe = !wireframe;
+
+        if (wireframe) {
+            getEngine()->getRenderContext().setPolygonMode(
+                    RenderContext::POLYGON_MODE_WIREFRAME);
+        }
+        else {
+            getEngine()->getRenderContext().setPolygonMode(
+                    RenderContext::POLYGON_MODE_FILL);
+        }
     }
 
     chunkManager->update(*cam);

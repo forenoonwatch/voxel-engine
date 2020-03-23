@@ -27,6 +27,12 @@ class RenderContext {
 			BLEND_FUNC_DST_ALPHA = GL_DST_ALPHA
 		};
 
+		enum PolygonMode {
+			POLYGON_MODE_POINTS = GL_POINT,
+			POLYGON_MODE_WIREFRAME = GL_LINE,
+			POLYGON_MODE_FILL = GL_FILL
+		};
+
 		RenderContext();
 
 		void awaitFinish();
@@ -66,6 +72,8 @@ class RenderContext {
 		void setRasterizerDiscard(bool discard);
 		void setBlending(enum BlendFunc srcBlend, enum BlendFunc destBlend);
 
+		void setPolygonMode(enum PolygonMode polygonMode);
+
 		uint32 getVersion();
 		String getShaderVersion();
 
@@ -94,6 +102,8 @@ class RenderContext {
 
 		enum BlendFunc currentSourceBlend;
 		enum BlendFunc currentDestBlend;
+
+		enum PolygonMode polygonMode;
 
 		uint32 currentShader;
 		uint32 currentVertexArray;
