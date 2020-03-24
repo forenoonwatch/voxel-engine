@@ -16,5 +16,8 @@ void update_player_input(Registry& registry, Input& input) {
 
         pic.mouseDeltaY = input.getMouseDeltaY();
         pic.mouseDeltaX = input.getMouseDeltaX();
+
+        pic.mouseX = input.getMouseX();
+        pic.mouseY = input.getMouseY();
     });
 }

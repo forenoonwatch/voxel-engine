@@ -3,10 +3,13 @@
 #include "camera.hpp"
 #include "player-input.hpp"
 
+#include <engine/application/application.hpp>
+
 #include <engine/ecs/ecs.hpp>
 
-void update_camera_controller(Registry& registry, float deltaTime) {
-    registry.view<Camera, CameraController, PlayerInputComponent>().each([deltaTime](
+void update_camera_controller(Registry& registry, Application& application,
+        float deltaTime) {
+    registry.view<Camera, CameraController, PlayerInputComponent>().each([&](
             auto& camera, auto& controller, auto& pic) {
         float x = 0.f;
         float y = 0.f;
@@ -63,5 +66,17 @@ void update_camera_controller(Registry& registry, float deltaTime) {
         tf[3] = Vector4f(controller.position, 1.f);
 
         camera.invView = tf;
+
+        // mouse ray
+		const float ndcX = (2.f * pic.mouseX)
+				/ static_cast<float>(application.getWidth()) - 1.f;
+		const float ndcY = (2.f * pic.mouseY)
+				/ static_cast<float>(application.getHeight()) - 1.f;
+
+        // TODO: cache camera inverse projection!!!
+		Vector4f rawRay = Math::inverse(camera.projection) * Vector4f(ndcX, -ndcY, -1.f, 1.f);
+		rawRay = camera.view * Vector4f(rawRay.x, rawRay.y, -1.f, 0.f);
+	
+		camera.rayDirection = Math::normalize(Vector3f(rawRay));
     });
 }

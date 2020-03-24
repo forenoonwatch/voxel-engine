@@ -15,8 +15,9 @@ struct Camera {
     Matrix4f viewProjection;
 
     Frustum frustum;
-
     bool syncFrustum = true;
+
+    Vector3f rayDirection;
 };
 
 void update_camera_system(Registry& registry);

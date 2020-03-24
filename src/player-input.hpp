@@ -15,6 +15,9 @@ struct PlayerInputComponent {
 
     float mouseDeltaY;
     float mouseDeltaX;
+
+    float mouseX;
+    float mouseY;
 };
 
 void update_player_input(Registry& registry, Input& input);

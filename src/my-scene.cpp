@@ -52,7 +52,7 @@ void MyScene::load() {
             0.f, 0.f, 15.f);
     registry.assign<PlayerInputComponent>(eCam);
 
-    chunkManager = new ChunkManager(getEngine()->getRenderContext(), 32);
+    chunkManager = new ChunkManager(getEngine()->getRenderContext(), 40);
 
     cameraBuffer = new UniformBuffer(getEngine()->getRenderContext(),
             sizeof(Matrix4f), GL_STREAM_DRAW, 0);
@@ -62,7 +62,8 @@ void MyScene::update(float deltaTime) {
     static bool wireframe = false; // TODO: poopoo
 
     update_player_input(getEngine()->getRegistry(), getEngine()->getInput());
-    update_camera_controller(getEngine()->getRegistry(), deltaTime);
+    update_camera_controller(getEngine()->getRegistry(),
+            getEngine()->getApplication(), deltaTime);
     update_camera_system(getEngine()->getRegistry());
 
     auto* cam = getEngine()->getRegistry().raw<Camera>();
@@ -92,7 +93,6 @@ void MyScene::render() {
 
     auto shader = ResourceCache<Shader>::getInstance().handle("basic-shader"_hs);
     auto cube = ResourceCache<VertexArray>::getInstance().handle("cube"_hs);
-    auto& context = getEngine()->getRenderContext();
 
     auto* cam = getEngine()->getRegistry().raw<Camera>();
 
