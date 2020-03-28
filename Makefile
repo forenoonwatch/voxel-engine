@@ -15,7 +15,7 @@ ifeq ($(UNAME), Linux)
 	LDLIBS := $(shell pkg-config glfw3 --static --libs) $(shell pkg-config glew --static --libs) $(shell pkg-config assimp --static --libs) -lnoise
 	LDFLAGS := -Wall -fuse-ld=gold
 
-	CXXFLAGS := -std=c++17 -g -ggdb -I$(CURDIR)/src
+	CXXFLAGS := -std=c++17 -g -ggdb -Og -Wall -I$(CURDIR)/src
 else
 	LDLIBS := -lglu32 -lopengl32 -lglew32 -lglfw3 -lassimp.dll 
 	LDFLAGS := -Wall

@@ -4,6 +4,8 @@
 
 #include "chunk-builder.hpp"
 
+#include "block-tree.hpp"
+
 #include <engine/core/common.hpp>
 #include <engine/core/memory.hpp>
 
@@ -26,11 +28,14 @@ class Chunk final {
         void load(TerrainGenerator& terrainGenerator);
         void rebuild(Memory::SharedPointer<ChunkBuilder> chunkBuilder);
 
-        void setPosition(const Vector3i& position) noexcept;
+        void moveTo(const Vector3i& position) noexcept;
 
         void setRebuilt() noexcept;
 
         Block& get(uint32 x, uint32 y, uint32 z) noexcept;
+        Block& get(const Vector3i& position) noexcept;
+
+        const Block& get(const Vector3i& position) const noexcept;
 
         VertexArray& getVertexArray() noexcept;
 
@@ -49,6 +54,9 @@ class Chunk final {
         bool shouldRender() const noexcept;
 
         std::mutex& getMutex() noexcept;
+
+        BlockTreeNode& getBlockTree() noexcept;
+        const BlockTreeNode& getBlockTree() const noexcept;
 
         ~Chunk();
     private:
@@ -74,4 +82,8 @@ class Chunk final {
         uint32 flags;
 
         std::mutex mutex;
+
+        BlockTreeNode blockTree;
+
+        friend class ChunkManager;
 };

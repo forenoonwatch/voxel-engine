@@ -67,16 +67,15 @@ void ChunkBuilder::add_quad(const Vector3f& v0, const Vector3f& v1,
 void ChunkBuilder::fill_buffers() {
     std::unique_lock<std::mutex> lock(chunk->getMutex());
 
-    Matrix4f pos = Math::translate(Matrix4f(1.f),
-            static_cast<Vector3f>(chunk->getPosition())
-            * static_cast<float>(Chunk::CHUNK_SIZE));
+    const Vector3f pos = static_cast<Vector3f>(chunk->getPosition())
+            * static_cast<float>(Chunk::CHUNK_SIZE);
 
     auto& vao = chunk->getVertexArray();
 
     vao.updateBuffer(0, positions.data(), positions.size() * sizeof(Vector3f));
     vao.updateBuffer(1, normals.data(), normals.size() * sizeof(Vector3f));
     vao.updateBuffer(2, colors.data(), colors.size() * sizeof(Vector3f));
-    vao.updateBuffer(3, &pos, sizeof(Matrix4f));
+    vao.updateBuffer(3, &pos, sizeof(Vector3f));
     vao.updateIndices(indices.data(), indices.size());
 
     chunk->setRebuilt();

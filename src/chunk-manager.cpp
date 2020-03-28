@@ -18,6 +18,7 @@ ChunkManager::ChunkManager(RenderContext& context, int32 loadDistance)
         : chunkPool((Chunk*)Memory::malloc(CUBE(loadDistance) * sizeof(Chunk)))
         , loadedChunks((Chunk**)Memory::malloc(CUBE(loadDistance) * sizeof(Chunk*)))
         , loadDistance(loadDistance)
+        , chunkTree(loadDistance)
         , renderList((Chunk**)Memory::malloc(CUBE(loadDistance) * sizeof(Chunk*)))
         , chunkOffset(3, 0, 0)
         , context(&context)
@@ -26,7 +27,7 @@ ChunkManager::ChunkManager(RenderContext& context, int32 loadDistance)
     model.allocateElement(3);
     model.allocateElement(3);
     model.allocateElement(3);
-    model.allocateElement(16);
+    model.allocateElement(3);
     model.setInstancedElementStartIndex(3);
 
     for (int32 i = 0; i < CUBE(loadDistance); ++i) {
@@ -34,6 +35,16 @@ ChunkManager::ChunkManager(RenderContext& context, int32 loadDistance)
 
         chunkPool[i].init(context, model);
         loadedChunks[i] = chunkPool + i;
+    }
+
+    for (int32 z = 0; z < loadDistance; ++z) {
+        for (int32 y = 0; y < loadDistance; ++y) {
+            for (int32 x = 0; x < loadDistance; ++x) {
+                const Vector3i localPos(x, y, z);
+                chunkTree.add(localPos,
+                        loadedChunks[get_local_index(localPos)]);
+            }
+        }
     }
 
     for (int32 i = 0; i < NUM_THREADS; ++i) {
@@ -81,7 +92,7 @@ void ChunkManager::update_load_list(const Camera& camera) {
                     newChunks[get_local_index(pLocal)] = chnk;
 
                     if (chnk->getPosition() != pLocal + newOffset) {
-                        chnk->setPosition(pLocal + newOffset);
+                        chnk->moveTo(pLocal + newOffset);
                         chunksToLoad.push(chnk);
                     }
                 }
@@ -104,7 +115,7 @@ void ChunkManager::update_load_list(const Camera& camera) {
                             chnk) {
                         newChunks[get_local_index(pLocal)] = chnk;
 
-                        chnk->setPosition(pLocal + newOffset);
+                        chnk->moveTo(pLocal + newOffset);
                         chunksToLoad.push(chnk);
                     }
                     else {
@@ -118,6 +129,8 @@ void ChunkManager::update_load_list(const Camera& camera) {
     chunkOffset = newOffset;
 
     Memory::memcpy(loadedChunks, newChunks, CUBE(loadDistance) * sizeof(Chunk*));
+
+    update_chunk_tree();
 }
 
 void ChunkManager::rebuild_chunks() {
@@ -157,6 +170,130 @@ void ChunkManager::render_chunks(RenderTarget& target,
     //DEBUG_LOG_TEMP("Rendered %d/%d chunks", numToRender, CUBE(loadDistance));
 }
 
+bool ChunkManager::find_block_on_ray(const Vector3f& position,
+        const Vector3f& direction, Vector3i& outBlockPosition,
+        Vector3i& outSideDirection) {
+    Vector3i chunkCoord;
+    Vector3f chunkPos;
+    Vector3i blockCoord;
+    Vector3f blockPos;
+
+    const Vector3f origin = position / static_cast<float>(Chunk::CHUNK_SIZE)
+            - Vector3f(chunkOffset);
+
+    constexpr const Vector3f DIRECTIONS[] = {Vector3f(-1, 0, 0), Vector3f(1, 0, 0),
+            Vector3f(0, -1, 0), Vector3f(0, 1, 0), Vector3f(0, 0, -1), Vector3f(0, 0, 1)};
+
+    if (chunkTree.intersectsRay(origin, direction, chunkCoord, chunkPos,
+            blockCoord, blockPos)) {
+        float maxDot = -FLT_MAX;
+        int32 maxIndex;
+
+        for (int32 i = 0; i < 6; ++i) {
+            const float d = Math::dot(DIRECTIONS[i], blockPos - Vector3f(blockCoord));
+
+            if (d > maxDot) {
+                maxDot = d;
+                maxIndex = i;
+            }
+        }
+
+        outBlockPosition = (chunkCoord + chunkOffset) * Chunk::CHUNK_SIZE
+                + blockCoord;
+        outSideDirection = DIRECTIONS[maxIndex];
+
+        return true;
+    }
+
+    return false;
+}
+
+void ChunkManager::add_block(const Vector3i& position,
+        const BlockType blockType) {
+    Vector3i blockPos = position % Chunk::CHUNK_SIZE;
+
+    if (blockPos.x < 0) {
+        blockPos.x += Chunk::CHUNK_SIZE;
+    }
+
+    if (blockPos.y < 0) {
+        blockPos.y += Chunk::CHUNK_SIZE;
+    }
+
+    if (blockPos.z < 0) {
+        blockPos.z += Chunk::CHUNK_SIZE;
+    }
+
+    const Vector3i chunkPos = (position - blockPos) / Chunk::CHUNK_SIZE
+            - chunkOffset;
+
+    auto* chunk = loadedChunks[get_local_index(chunkPos)];
+    auto& block = chunk->get(blockPos);
+
+    block.set_active(true);
+    block.set_type(blockType);
+    chunk->getBlockTree().add(blockPos);
+
+    // TODO: TEMP: REMOVE THIS
+    auto cb = Memory::make_shared<ChunkBuilder>();
+    chunk->rebuild(cb);
+    cb->fill_buffers();
+}
+
+void ChunkManager::remove_block(const Vector3i& position) {
+    Vector3i blockPos = position % Chunk::CHUNK_SIZE;
+
+    if (blockPos.x < 0) {
+        blockPos.x += Chunk::CHUNK_SIZE;
+    }
+
+    if (blockPos.y < 0) {
+        blockPos.y += Chunk::CHUNK_SIZE;
+    }
+
+    if (blockPos.z < 0) {
+        blockPos.z += Chunk::CHUNK_SIZE;
+    }
+
+    const Vector3i chunkPos = (position - blockPos) / Chunk::CHUNK_SIZE
+            - chunkOffset;
+
+    auto* chunk = loadedChunks[get_local_index(chunkPos)];
+    auto& block = chunk->get(blockPos);
+
+    block.set_active(false);
+    block.set_type(BlockType::AIR);
+    chunk->getBlockTree().remove(blockPos);
+
+    // TODO: TEMP: REMOVE THIS
+    auto cb = Memory::make_shared<ChunkBuilder>();
+    chunk->rebuild(cb);
+    cb->fill_buffers();
+}
+
+const Block& ChunkManager::get_block(const Vector3i& position) const {
+    Vector3i blockPos = position % Chunk::CHUNK_SIZE;
+
+    if (blockPos.x < 0) {
+        blockPos.x += Chunk::CHUNK_SIZE;
+    }
+
+    if (blockPos.y < 0) {
+        blockPos.y += Chunk::CHUNK_SIZE;
+    }
+
+    if (blockPos.z < 0) {
+        blockPos.z += Chunk::CHUNK_SIZE;
+    }
+
+    const Vector3i chunkPos = (position - blockPos) / Chunk::CHUNK_SIZE
+            - chunkOffset;
+
+    const auto* chunk = loadedChunks[get_local_index(chunkPos)];
+
+    return chunk->get(blockPos);
+}
+
 ChunkManager::~ChunkManager() {
     running = false;
 
@@ -170,6 +307,7 @@ ChunkManager::~ChunkManager() {
 
     std::unique_lock<std::mutex> loadLock(loadMutex);
     std::unique_lock<std::mutex> rebuildLock(rebuildMutex);
+    std::unique_lock<std::mutex> bufferLock(bufferMutex);
 
     for (int32 i = 0; i < CUBE(loadDistance); ++i) {
         std::unique_lock<std::mutex> lock(chunkPool[i].getMutex());
@@ -240,9 +378,24 @@ void ChunkManager::update_render_list(const Camera& camera) {
     }
 }
 
+void ChunkManager::update_chunk_tree() {
+    // TODO: in a perfect world I'd be walking the tree and picking chunks based on region
+    // instead of vice versa
+    for (int32 z = 0; z < loadDistance; ++z) {
+        for (int32 y = 0; y < loadDistance; ++y) {
+            for (int32 x = 0; x < loadDistance; ++x) {
+                const Vector3i localPos(x, y, z);
+                auto* chunk = loadedChunks[get_local_index(localPos)];
+
+                chunkTree.add(localPos, chunk);
+            }
+        }
+    }
+}
+
 int32 ChunkManager::get_local_index(const Vector3i& localPos) const {
-    return localPos.x * loadDistance * loadDistance
-            + localPos.y * loadDistance + localPos.z;
+    return (localPos.x * loadDistance + localPos.y) * loadDistance
+            + localPos.z;
 }
 
 Chunk* ChunkManager::get_chunk_by_position(const Vector3i& worldPos) {

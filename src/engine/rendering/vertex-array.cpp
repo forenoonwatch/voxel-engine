@@ -14,7 +14,7 @@ VertexArray::VertexArray(RenderContext& context,
 		, buffers(new GLuint[numBuffers])
 		, bufferSizes(new uintptr[numBuffers])
 		, usage(usage)
-		, indexed(indexed)
+		, indexed(true)
 		, bufferOwnership(FULLY_OWNED) {
 	glGenVertexArrays(1, &arrayID);
 	context.setVertexArray(arrayID);

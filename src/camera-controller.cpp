@@ -75,7 +75,7 @@ void update_camera_controller(Registry& registry, Application& application,
 
         // TODO: cache camera inverse projection!!!
 		Vector4f rawRay = Math::inverse(camera.projection) * Vector4f(ndcX, -ndcY, -1.f, 1.f);
-		rawRay = camera.view * Vector4f(rawRay.x, rawRay.y, -1.f, 0.f);
+		rawRay = camera.invView * Vector4f(rawRay.x, rawRay.y, -1.f, 0.f);
 	
 		camera.rayDirection = Math::normalize(Vector3f(rawRay));
     });

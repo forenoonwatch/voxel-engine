@@ -14,6 +14,9 @@
 
 #include "terrain-generator.hpp"
 
+#include "block.hpp"
+#include "chunk-tree.hpp"
+
 class Chunk;
 class RenderContext;
 class RenderTarget;
@@ -30,6 +33,16 @@ class ChunkManager {
         void render_chunks(RenderTarget& target, Shader& shader,
                 const Camera& camera);
 
+        bool find_block_on_ray(const Vector3f& origin,
+                const Vector3f& direction, Vector3i& blockPosition,
+                Vector3i& sideDirection);
+
+        void add_block(const Vector3i& position,
+                const BlockType blockType);
+        void remove_block(const Vector3i& position);
+
+        const Block& get_block(const Vector3i& position) const;
+
         ~ChunkManager();
     private:
         NULL_COPY_AND_ASSIGN(ChunkManager);
@@ -37,6 +50,8 @@ class ChunkManager {
         Chunk* chunkPool;
         Chunk** loadedChunks;
         int32 loadDistance;
+
+        ChunkTreeNode chunkTree;
 
         Queue<Chunk*> chunksToLoad;
         std::mutex loadMutex;
@@ -66,6 +81,8 @@ class ChunkManager {
 
         void update_load_list(const Camera& camera);
         void update_render_list(const Camera& camera);
+
+        void update_chunk_tree();
 
         int32 get_local_index(const Vector3i& localPos) const;
 

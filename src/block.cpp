@@ -12,22 +12,3 @@ Vector3f Block::get_color(const BlockType type) noexcept {
             return Vector3f(0.f, 0.f, 0.f);
     }
 }
-
-Vector3f BlockFace::get_normal() const {
-    switch (side) {
-        case Side::SIDE_BACK:
-            return Vector3f(0, 0, 1);
-        case Side::SIDE_FRONT:
-            return Vector3f(0, 0, -1);
-        case Side::SIDE_LEFT:
-            return Vector3f(-1, 0, 0);
-        case Side::SIDE_RIGHT:
-            return Vector3f(1, 0, 0);
-        case Side::SIDE_BOTTOM:
-            return Vector3f(0, -1, 0);
-        case Side::SIDE_TOP:
-            return Vector3f(0, 1, 0);
-    }
-
-    return Vector3f();
-}

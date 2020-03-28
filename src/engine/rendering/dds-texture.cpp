@@ -31,7 +31,7 @@ bool DDSTexture::load(const String& fileName) {
 	}
 
 	char magic[4];
-	fread(magic, 1, 4, file);
+	(void)fread(magic, 1, 4, file);
 
 	if (strncmp(magic, "DDS ", 4) != 0) {
 		DEBUG_LOG(LOG_ERROR, "DDS Texture",
@@ -42,7 +42,7 @@ bool DDSTexture::load(const String& fileName) {
 	}
 
 	uint8 header[124];
-	fread(&header, countof(header), 1, file);
+	(void)fread(&header, countof(header), 1, file);
 
 	height = *((uint32*)&header[8]);
 	width = *((uint32*)&header[12]);
@@ -50,7 +50,7 @@ bool DDSTexture::load(const String& fileName) {
 
 	mipMapCount = *((uint32*)&header[24]);
 
-	uint32 flags = *((uint32*)&header[76]);
+	//uint32 flags = *((uint32*)&header[76]);
 	fourCC = *((uint32*)&header[80]);
 
 	//uint32 caps1 = *((uint32*)&header[104]);

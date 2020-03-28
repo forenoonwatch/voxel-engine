@@ -9,7 +9,8 @@
 			"*.tcc": "cpp",
 			"istream": "cpp",
 			"ostream": "cpp",
-			"typeinfo": "cpp"
+			"typeinfo": "cpp",
+			"new": "cpp"
 		}
 	}
 }

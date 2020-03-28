@@ -21,6 +21,7 @@
 #include "player-input.hpp"
 
 #include "chunk-manager.hpp"
+#include "chunk.hpp"
 
 void MyScene::load() {
     ResourceCache<Shader>::getInstance().load<ShaderLoader>("basic-shader"_hs,
@@ -52,7 +53,7 @@ void MyScene::load() {
             0.f, 0.f, 15.f);
     registry.assign<PlayerInputComponent>(eCam);
 
-    chunkManager = new ChunkManager(getEngine()->getRenderContext(), 40);
+    chunkManager = new ChunkManager(getEngine()->getRenderContext(), 16);
 
     cameraBuffer = new UniformBuffer(getEngine()->getRenderContext(),
             sizeof(Matrix4f), GL_STREAM_DRAW, 0);
@@ -60,6 +61,7 @@ void MyScene::load() {
 
 void MyScene::update(float deltaTime) {
     static bool wireframe = false; // TODO: poopoo
+    static BlockType buildType = BlockType::STONE; // TODO: poopoo
 
     update_player_input(getEngine()->getRegistry(), getEngine()->getInput());
     update_camera_controller(getEngine()->getRegistry(),
@@ -86,6 +88,28 @@ void MyScene::update(float deltaTime) {
     }
 
     chunkManager->update(*cam);
+
+    if (getEngine()->getInput().was_mouse_pressed(Input::MOUSE_BUTTON_LEFT)) {
+        Vector3i blockPos, sideDir;
+
+        if (chunkManager->find_block_on_ray(Vector3f(cam->invView[3]),
+                cam->rayDirection, blockPos, sideDir)) {
+            if (getEngine()->getInput().is_key_down(Input::KEY_LEFT_SHIFT)) {
+                chunkManager->remove_block(blockPos);
+            }
+            else {
+                chunkManager->add_block(blockPos + sideDir, buildType);
+            }
+        }
+    }
+    else if (getEngine()->getInput().was_mouse_pressed(Input::MOUSE_BUTTON_MIDDLE)) {
+        Vector3i blockPos, sideDir;
+
+        if (chunkManager->find_block_on_ray(Vector3f(cam->invView[3]),
+                cam->rayDirection, blockPos, sideDir)) {
+            buildType = chunkManager->get_block(blockPos).get_type();
+        }
+    }
 }
 
 void MyScene::render() {
