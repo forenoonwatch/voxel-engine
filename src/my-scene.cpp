@@ -61,7 +61,6 @@ void MyScene::load() {
 
 void MyScene::update(float deltaTime) {
     static bool wireframe = false; // TODO: poopoo
-    static BlockType buildType = BlockType::STONE; // TODO: poopoo
 
     update_player_input(getEngine()->getRegistry(), getEngine()->getInput());
     update_camera_controller(getEngine()->getRegistry(),
@@ -89,27 +88,7 @@ void MyScene::update(float deltaTime) {
 
     chunkManager->update(*cam);
 
-    if (getEngine()->getInput().was_mouse_pressed(Input::MOUSE_BUTTON_LEFT)) {
-        Vector3i blockPos, sideDir;
-
-        if (chunkManager->find_block_on_ray(Vector3f(cam->invView[3]),
-                cam->rayDirection, blockPos, sideDir)) {
-            if (getEngine()->getInput().is_key_down(Input::KEY_LEFT_SHIFT)) {
-                chunkManager->remove_block(blockPos);
-            }
-            else {
-                chunkManager->add_block(blockPos + sideDir, buildType);
-            }
-        }
-    }
-    else if (getEngine()->getInput().was_mouse_pressed(Input::MOUSE_BUTTON_MIDDLE)) {
-        Vector3i blockPos, sideDir;
-
-        if (chunkManager->find_block_on_ray(Vector3f(cam->invView[3]),
-                cam->rayDirection, blockPos, sideDir)) {
-            buildType = chunkManager->get_block(blockPos).get_type();
-        }
-    }
+    update_block_placement();
 }
 
 void MyScene::render() {
@@ -129,4 +108,45 @@ void MyScene::unload() {
     delete cameraBuffer;
     delete chunkManager;
     delete screen;
+}
+
+void MyScene::update_block_placement() {
+    static BlockType buildType = BlockType::STONE; // TODO: poopoo
+    constexpr const int32 radius = 27;
+
+    auto* cam = getEngine()->getRegistry().raw<Camera>();
+
+    if (getEngine()->getInput().was_mouse_pressed(Input::MOUSE_BUTTON_LEFT)) {
+        Vector3i blockPos, sideDir;
+
+        const Vector3f origin(cam->invView[3]);
+
+        if (chunkManager->find_block_on_ray(origin,
+                cam->rayDirection, blockPos, sideDir)) {
+            if (getEngine()->getInput().is_key_down(Input::KEY_LEFT_SHIFT)) {
+                for (int32 z = -radius; z <= radius; ++z) {
+                    for (int32 y = -radius; y <= radius; ++y) {
+                        for (int32 x = -radius; x <= radius; ++x) {
+                            const Vector3i pos = blockPos + Vector3i(x, y, z);
+
+                            if (Math::length(Vector3f(x, y, z)) <= radius) {
+                                chunkManager->remove_block(pos);
+                            }
+                        }
+                    }
+                }
+            }
+            else {
+                chunkManager->add_block(blockPos + sideDir, buildType);
+            }
+        }
+    }
+    else if (getEngine()->getInput().was_mouse_pressed(Input::MOUSE_BUTTON_MIDDLE)) {
+        Vector3i blockPos, sideDir;
+
+        if (chunkManager->find_block_on_ray(Vector3f(cam->invView[3]),
+                cam->rayDirection, blockPos, sideDir)) {
+            buildType = chunkManager->get_block(blockPos).get_type();
+        }
+    }
 }

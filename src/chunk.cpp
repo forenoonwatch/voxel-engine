@@ -71,9 +71,11 @@ void Chunk::rebuild(Memory::SharedPointer<ChunkBuilder> cb) {
     int n, w, h;
 
     flags &= ~FLAG_ALL_OCCLUSIONS;
+    flags &= ~FLAG_EMPTY;
 
     Block mask[CHUNK_SIZE * CHUNK_SIZE];
 
+    // TODO: do not push unrendered interior faces
     for (bool backFace = true, b = false; b != backFace;
             backFace = (backFace && b), b = !b) {
         for (int d  = 0; d < 3; ++d) {
@@ -114,7 +116,7 @@ void Chunk::rebuild(Memory::SharedPointer<ChunkBuilder> cb) {
                         }
 
                         block.set_active(!(b0.is_active() && b1.is_active()
-                                && b0.get_type() == b1.get_type()));
+                                /*&& b0.get_type() == b1.get_type()*/));
 
                         if (block.is_active()) {
                             if (backFace) {
@@ -187,12 +189,11 @@ void Chunk::rebuild(Memory::SharedPointer<ChunkBuilder> cb) {
 
                 if (x[u] == 0 && x[v] == 0 && (x[d] == 0 || x[d] == CHUNK_SIZE)
                         && w == CHUNK_SIZE && h == CHUNK_SIZE) {
-                    // TODO: ensure this works correctly
                     switch (side) {
-                        case Side::SIDE_BACK:
+                        case Side::SIDE_FRONT:
                             flags |= FLAG_OCCLUDES_POS_Z;
                             break;
-                        case Side::SIDE_FRONT:
+                        case Side::SIDE_BACK:
                             flags |= FLAG_OCCLUDES_NEG_Z;
                             break;
                         case Side::SIDE_LEFT:

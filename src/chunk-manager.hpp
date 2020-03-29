@@ -5,6 +5,7 @@
 
 #include <engine/core/array-list.hpp>
 #include <engine/core/queue.hpp>
+#include <engine/core/tree-map.hpp>
 
 #include <engine/math/vector.hpp>
 
@@ -47,6 +48,12 @@ class ChunkManager {
     private:
         NULL_COPY_AND_ASSIGN(ChunkManager);
 
+        struct BlockUpdate {
+            Vector3i position;
+            bool active;
+            BlockType type;
+        };
+
         Chunk* chunkPool;
         Chunk** loadedChunks;
         int32 loadDistance;
@@ -62,6 +69,9 @@ class ChunkManager {
         Queue<Memory::SharedPointer<ChunkBuilder>> chunksToBuffer;
         std::mutex bufferMutex;
 
+        TreeMap<Chunk*, ArrayList<BlockUpdate>> blockUpdates;
+        std::mutex blockUpdateMutex;
+
         Chunk** renderList;
         int32 numToRender;
 
@@ -75,9 +85,11 @@ class ChunkManager {
 
         ArrayList<std::thread> loadThreads;
         ArrayList<std::thread> rebuildThreads;
+        ArrayList<std::thread> blockUpdateThreads;
 
         void load_chunks();
         void rebuild_chunks();
+        void handle_block_updates();
 
         void update_load_list(const Camera& camera);
         void update_render_list(const Camera& camera);

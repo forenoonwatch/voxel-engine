@@ -2,7 +2,7 @@
 
 #include <engine/math/vector.hpp>
 
-enum class BlockType {
+enum class BlockType : uint16 {
     AIR = 0,
     GRASS,
     DIRT,
@@ -60,4 +60,4 @@ class Block {
     private:
         bool active;
         BlockType type;
-};
+} __attribute__((packed)) ;

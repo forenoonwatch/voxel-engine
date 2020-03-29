@@ -12,7 +12,8 @@
 
 #define CUBE(n) ((n) * (n) * (n))
 
-#define NUM_THREADS 2
+#define NUM_THREADS             1
+#define MAX_CHUNKS_TO_REBUILD   8
 
 ChunkManager::ChunkManager(RenderContext& context, int32 loadDistance)
         : chunkPool((Chunk*)Memory::malloc(CUBE(loadDistance) * sizeof(Chunk)))
@@ -50,6 +51,7 @@ ChunkManager::ChunkManager(RenderContext& context, int32 loadDistance)
     for (int32 i = 0; i < NUM_THREADS; ++i) {
         loadThreads.emplace_back([&]() { load_chunks(); });
         rebuildThreads.emplace_back([&]() { rebuild_chunks(); });
+        blockUpdateThreads.emplace_back([&]() { handle_block_updates(); });
     }
 }
 
@@ -63,6 +65,7 @@ void ChunkManager::update(const Camera& camera) {
         chunksToBuffer.pop();
 
         cb->fill_buffers();
+        cb.reset();
     }
 }
 
@@ -228,16 +231,9 @@ void ChunkManager::add_block(const Vector3i& position,
             - chunkOffset;
 
     auto* chunk = loadedChunks[get_local_index(chunkPos)];
-    auto& block = chunk->get(blockPos);
 
-    block.set_active(true);
-    block.set_type(blockType);
-    chunk->getBlockTree().add(blockPos);
-
-    // TODO: TEMP: REMOVE THIS
-    auto cb = Memory::make_shared<ChunkBuilder>();
-    chunk->rebuild(cb);
-    cb->fill_buffers();
+    std::unique_lock<std::mutex> lock(blockUpdateMutex);
+    blockUpdates[chunk].push_back({blockPos, true, blockType});
 }
 
 void ChunkManager::remove_block(const Vector3i& position) {
@@ -259,16 +255,9 @@ void ChunkManager::remove_block(const Vector3i& position) {
             - chunkOffset;
 
     auto* chunk = loadedChunks[get_local_index(chunkPos)];
-    auto& block = chunk->get(blockPos);
 
-    block.set_active(false);
-    block.set_type(BlockType::AIR);
-    chunk->getBlockTree().remove(blockPos);
-
-    // TODO: TEMP: REMOVE THIS
-    auto cb = Memory::make_shared<ChunkBuilder>();
-    chunk->rebuild(cb);
-    cb->fill_buffers();
+    std::unique_lock<std::mutex> lock(blockUpdateMutex);
+    blockUpdates[chunk].push_back({blockPos, false, BlockType::AIR});
 }
 
 const Block& ChunkManager::get_block(const Vector3i& position) const {
@@ -305,9 +294,9 @@ ChunkManager::~ChunkManager() {
         thread.join();
     }
 
-    std::unique_lock<std::mutex> loadLock(loadMutex);
-    std::unique_lock<std::mutex> rebuildLock(rebuildMutex);
-    std::unique_lock<std::mutex> bufferLock(bufferMutex);
+    for (auto& thread : blockUpdateThreads) {
+        thread.join();
+    }
 
     for (int32 i = 0; i < CUBE(loadDistance); ++i) {
         std::unique_lock<std::mutex> lock(chunkPool[i].getMutex());
@@ -334,7 +323,62 @@ void ChunkManager::load_chunks() {
         lock.unlock();
 
         if (chunk) {
-            chunk->load(terrainGenerator);
+            std::unique_lock<std::mutex> rebuildLock(rebuildMutex);
+
+            if (chunksToRebuild.size() < MAX_CHUNKS_TO_REBUILD) {
+                rebuildLock.unlock();
+
+                chunk->load(terrainGenerator);
+
+                rebuildLock.lock();
+                chunksToRebuild.push(chunk);
+            }
+            else {
+                lock.lock();
+                chunksToLoad.push(chunk);
+            }
+        }
+    }
+}
+
+void ChunkManager::handle_block_updates() {
+    while (running) {
+        std::unique_lock<std::mutex> lock(blockUpdateMutex);
+        Chunk* chunk = nullptr;
+        ArrayList<BlockUpdate> chunkUpdateList;
+
+        for (auto it = std::begin(blockUpdates), end = std::end(blockUpdates);
+                it != end; ++it) {
+            if (!it->second.empty()) {
+                chunk = it->first;
+                chunkUpdateList.assign(std::begin(it->second),
+                        std::end(it->second));
+                it->second.clear();
+
+                break;
+            }
+        }
+
+        lock.unlock();
+
+        if (chunk) {
+            std::unique_lock<std::mutex> chunkLock(chunk->getMutex());
+
+            for (auto it = std::begin(chunkUpdateList), end = std::end(chunkUpdateList);
+                    it != end; ++it) {
+                auto& block = chunk->get(it->position);
+                block.set_active(it->active);
+                block.set_type(it->type);
+
+                if (it->active) {
+                    chunk->getBlockTree().add(it->position);
+                }
+                else {
+                    chunk->getBlockTree().remove(it->position);
+                }
+            }
+
+            chunkLock.unlock();
 
             std::unique_lock<std::mutex> rebuildLock(rebuildMutex);
             chunksToRebuild.push(chunk);
@@ -417,7 +461,7 @@ bool ChunkManager::chunk_is_occluded(const Vector3i& chunkPos) const {
     return (negX && posX && negY && posY && negZ && posZ
             && negX->occludesPosX() && posX->occludesNegX()
             && negY->occludesPosY() && posY->occludesNegY()
-            && negZ->occludesPosY() && posZ->occludesNegY());
+            && negZ->occludesPosZ() && posZ->occludesNegZ());
 }
 
 bool ChunkManager::is_valid_local_index(const Vector3i& index) const {

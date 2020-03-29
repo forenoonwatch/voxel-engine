@@ -20,4 +20,6 @@ class MyScene final : public Scene<MyScene> {
         RenderTarget* screen;
         ChunkManager* chunkManager;
         UniformBuffer* cameraBuffer;
+
+        void update_block_placement();
 };
